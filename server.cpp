@@ -239,7 +239,21 @@ void get_session_file_path(int session_id, char path[]) {
  * Use get_session_file_path() to get the file path for each session.
  */
 void load_all_sessions() {
-    // TODO
+    for(int i = 0; i < NUM_SESSIONS; i++){
+	    char path[SESSION_PATH_LEN];
+	    get_session_file_path(i, path);
+
+	    FILE *file = fopen(path, "r");
+	    if(file == NULL){continue;}
+
+	    if(fread(&session_list[i], sizeof(session_t), 1, file) == 1){
+		    session_list[i].in_use = true;
+	    } else{
+		    session_list[i].in_use = false;
+	    }
+
+	    fclose(file);
+    }
 }
 
 /**
@@ -249,7 +263,15 @@ void load_all_sessions() {
  * @param session_id the session ID
  */
 void save_session(int session_id) {
-    // TODO
+    char path[SESSION_PATH_LEN]; 
+    get_session_file_path(session_id, path);
+
+    FILE *file = fopen(path, "wb");
+    if(file != NULL){
+	    fwrite(&session_list[session_id], sizeof(session_t), 1, file);//didn't print errors, can add but seems like it wouldn't really matter?
+    }
+
+    fclose(file);
 }
 
 /**
@@ -262,6 +284,8 @@ void save_session(int session_id) {
 int register_browser(int browser_socket_fd) {
     int browser_id;
 
+    pthread_mutex_lock(&browser_list_mutex);
+
     for (int i = 0; i < NUM_BROWSER; ++i) {
         if (!browser_list[i].in_use) {
             browser_id = i;
@@ -271,11 +295,15 @@ int register_browser(int browser_socket_fd) {
         }
     }
 
+    pthread_mutex_unlock(&browser_list_mutex);
+
     char message[BUFFER_LEN];
     receive_message(browser_socket_fd, message);
 
     int session_id = strtol(message, NULL, 10);
     if (session_id == -1) {
+        pthread_mutex_lock(&session_list_mutex);
+
         for (int i = 0; i < NUM_SESSIONS; ++i) {
             if (!session_list[i].in_use) {
                 session_id = i;
@@ -283,6 +311,8 @@ int register_browser(int browser_socket_fd) {
                 break;
             }
         }
+
+        pthread_mutex_unlock(&session_list_mutex);
     }
     browser_list[browser_id].session_id = session_id;
 
@@ -292,6 +322,7 @@ int register_browser(int browser_socket_fd) {
     return browser_id;
 }
 
+
 /**
  * Handles the given browser by listening to it, processing the message received,
  * broadcasting the update to all browsers with the same session ID, and backing up
@@ -299,7 +330,8 @@ int register_browser(int browser_socket_fd) {
  *
  * @param browser_socket_fd the socket file descriptor of the browser connected
  */
-void browser_handler(int browser_socket_fd) {
+void* browser_handler(void* arg) {
+    int browser_socket_fd = *(reinterpret_cast<int*>(arg)); // Cast the argument to int* and dereference it.
     int browser_id;
 
     browser_id = register_browser(browser_socket_fd);
@@ -322,7 +354,7 @@ void browser_handler(int browser_socket_fd) {
             browser_list[browser_id].in_use = false;
             pthread_mutex_unlock(&browser_list_mutex);
             printf("Browser #%d exited.\n", browser_id);
-            return;
+            return NULL; // Return NULL to comply with pthread function signature.
         }
 
         if (message[0] == '\0') {
@@ -341,6 +373,7 @@ void browser_handler(int browser_socket_fd) {
         save_session(session_id);
     }
 }
+
 
 /**
  * Starts the server. Sets up the connection, keeps accepting new browsers,
@@ -385,9 +418,11 @@ void start_server(int port) {
             perror("Socket accept failed");
             continue;
         }
-
-        // Starts the handler for the new browser.
-        browser_handler(browser_socket_fd);
+        
+        // Starts the handler for the new browser without joining with it immediately.
+        pthread_t thread_id; 
+        pthread_create(&thread_id, NULL, browser_handler, &browser_socket_fd);
+        pthread_detach(thread_id); // Detach the thread to avoid memory leaks and allow it to clean up itself.
     }
 
     // Closes the socket.

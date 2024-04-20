@@ -79,16 +79,24 @@ void read_user_input(char message[]) {
  * The file path of the cookie is stored in COOKIE_PATH.
  */
 void load_cookie() {
-    // TODO
-    session_id = -1;
-}
+   FILE *file = fopen(COOKIE_PATH, "r");
+   if(file != NULL){
+	   if(fread(&session_id, sizeof(int), 1, file) == 1){return;}
+   }
+   fclose(file);
+   session_id = -1;
+}//can add the error handling if wanted
 
 /**
  * Saves the session ID to the cookie on the disk.
  * The file path of the cookie is stored in COOKIE_PATH.
  */
 void save_cookie() {
-    // TODO
+    FILE *file = fopen(COOKIE_PATH, "wb");
+    if(file != NULL){
+	     fwrite(&session_id, sizeof(int), 1, file);
+    }
+    fclose(file);
 }
 
 /**
