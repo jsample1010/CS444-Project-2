@@ -330,7 +330,7 @@ int register_browser(int browser_socket_fd) {
     if (session_id == -1) {
         pthread_mutex_lock(&session_list_mutex);
         while(true) {
-            session_id = rand();
+            session_id = rand() % 10000;
 
             if (session_list.find(session_id) == session_list.end()) {
                 session_list.insert(std::make_pair(session_id, session_t{}));

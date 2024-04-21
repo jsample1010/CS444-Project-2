@@ -81,7 +81,7 @@ void read_user_input(char message[]) {
 void load_cookie() {
    FILE *file = fopen(COOKIE_PATH, "r");
    if(file != NULL){
-	   if(fread(&session_id, sizeof(int), 1, file) == 1){return;}
+       if(fread(&session_id, sizeof(int), 1, file) == 1){return;}
    }
    fclose(file);
    session_id = -1;
@@ -94,7 +94,7 @@ void load_cookie() {
 void save_cookie() {
     FILE *file = fopen(COOKIE_PATH, "wb");
     if(file != NULL){
-	     fwrite(&session_id, sizeof(int), 1, file);
+        fwrite(&session_id, sizeof(int), 1, file);
     }
     fclose(file);
 }
