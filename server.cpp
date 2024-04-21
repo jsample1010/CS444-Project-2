@@ -23,6 +23,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <netinet/in.h>
+#include <unordered_map>
 
 #define NUM_VARIABLES 26
 #define NUM_SESSIONS 128
@@ -43,7 +44,7 @@ typedef struct session_struct {
 } session_t;
 
 static browser_t browser_list[NUM_BROWSER];                             // Stores the information of all browsers.
-static session_t session_list[NUM_SESSIONS];                            // Stores the information of all sessions.
+static std::unordered_map<int, session_t> session_list;                 // Stores the information of all sessions.
 static pthread_mutex_t browser_list_mutex = PTHREAD_MUTEX_INITIALIZER;  // A mutex lock for the browser list.
 static pthread_mutex_t session_list_mutex = PTHREAD_MUTEX_INITIALIZER;  // A mutex lock for the session list.
 
@@ -161,16 +162,27 @@ bool process_message(int session_id, const char message[]) {
     // Processes the result variable.
     token = strtok(data, " ");
     result_idx = token[0] - 'a';
+    if(result_idx < 0 || result_idx > 25 || strlen(token) > 1){
+	    return false;
+    }
 
     // Processes "=".
     token = strtok(NULL, " ");
+    if(token[0] != '=' || token == NULL){
+	    return false;
+    }
 
     // Processes the first variable/value.
     token = strtok(NULL, " ");
     if (is_str_numeric(token)) {
         first_value = strtod(token, NULL);
-    } else {
+    } else if(token == NULL){
+	    return false;
+    }else {
         int first_idx = token[0] - 'a';
+	if(first_idx < 0 || first_idx > 25 || session_list[session_id].variables[first_idx] == false){
+		return false;
+	}
         first_value = session_list[session_id].values[first_idx];
     }
 
@@ -182,29 +194,40 @@ bool process_message(int session_id, const char message[]) {
         return true;
     }
     symbol = token[0];
+    if(symbol != '+' && symbol != '-' && symbol != '*' && symbol != '/'){
+	    return false;
+    }
 
     // Processes the second variable/value.
     token = strtok(NULL, " ");
     if (is_str_numeric(token)) {
         second_value = strtod(token, NULL);
-    } else {
+    } else if(token == NULL){
+	    return false;
+    } else{
         int second_idx = token[0] - 'a';
+	if(second_idx < 0 || second_idx > 25 || session_list[session_id].variables[second_idx] == false){
+		return false;
+	}
         second_value = session_list[session_id].values[second_idx];
     }
 
     // No data should be left over thereafter.
     token = strtok(NULL, " ");
+    if(token != NULL){
+	    return false;
+    }
 
     session_list[session_id].variables[result_idx] = true;
 
     if (symbol == '+') {
-        session_list[session_id].values[result_idx] = first_value + second_value;
+	    session_list[session_id].values[result_idx] = first_value + second_value;
     } else if (symbol == '-') {
-        session_list[session_id].values[result_idx] = first_value - second_value;
+	    session_list[session_id].values[result_idx] = first_value - second_value;
     } else if (symbol == '*') {
-        session_list[session_id].values[result_idx] = first_value * second_value;
+	    session_list[session_id].values[result_idx] = first_value * second_value;
     } else if (symbol == '/') {
-        session_list[session_id].values[result_idx] = first_value / second_value;
+	    session_list[session_id].values[result_idx] = first_value / second_value;
     }
 
     return true;
@@ -284,6 +307,8 @@ void save_session(int session_id) {
 int register_browser(int browser_socket_fd) {
     int browser_id;
 
+    pthread_mutex_lock(&browser_list_mutex);
+
     for (int i = 0; i < NUM_BROWSER; ++i) {
         if (!browser_list[i].in_use) {
             browser_id = i;
@@ -293,26 +318,33 @@ int register_browser(int browser_socket_fd) {
         }
     }
 
-    char message[BUFFER_LEN];
-    receive_message(browser_socket_fd, message);
+    pthread_mutex_unlock(&browser_list_mutex);
 
-    int session_id = strtol(message, NULL, 10);
+    char msg[BUFFER_LEN];
+    receive_message(browser_socket_fd, msg);
+
+    int session_id = strtol(msg, NULL, 10);
     if (session_id == -1) {
-        for (int i = 0; i < NUM_SESSIONS; ++i) {
-            if (!session_list[i].in_use) {
-                session_id = i;
-                session_list[session_id].in_use = true;
-                break;
-            }
-        }
-    }
-    browser_list[browser_id].session_id = session_id;
+        while(true) {
+            int session_id = rand();
 
-    sprintf(message, "%d", session_id);
-    send_message(browser_socket_fd, message);
+            if (session_list.find(session_id) == session_list.end()) {
+                session_list.insert(std::make_pair(session_id, session_t{}));
+	        session_list[session_id].in_use = true;
+		break;
+		}
+	    }
+	}
+
+                browser_list[browser_id].session_id = session_id;
+
+                char message[BUFFER_LEN];
+                sprintf(message, "%d", session_id);
+                send_message(browser_socket_fd, message);
 
     return browser_id;
 }
+
 
 /**
  * Handles the given browser by listening to it, processing the message received,
@@ -321,7 +353,8 @@ int register_browser(int browser_socket_fd) {
  *
  * @param browser_socket_fd the socket file descriptor of the browser connected
  */
-void browser_handler(int browser_socket_fd) {
+void* browser_handler(void* arg) {
+    int browser_socket_fd = *(reinterpret_cast<int*>(arg)); // Cast the argument to int* and dereference it.
     int browser_id;
 
     browser_id = register_browser(browser_socket_fd);
@@ -344,7 +377,7 @@ void browser_handler(int browser_socket_fd) {
             browser_list[browser_id].in_use = false;
             pthread_mutex_unlock(&browser_list_mutex);
             printf("Browser #%d exited.\n", browser_id);
-            return;
+            return NULL; // Return NULL to comply with pthread function signature.
         }
 
         if (message[0] == '\0') {
@@ -353,7 +386,7 @@ void browser_handler(int browser_socket_fd) {
 
         bool data_valid = process_message(session_id, message);
         if (!data_valid) {
-            // Send the error message to the browser.
+            broadcast(session_id, "ERROR");
             continue;
         }
 
@@ -363,6 +396,7 @@ void browser_handler(int browser_socket_fd) {
         save_session(session_id);
     }
 }
+
 
 /**
  * Starts the server. Sets up the connection, keeps accepting new browsers,
@@ -407,9 +441,11 @@ void start_server(int port) {
             perror("Socket accept failed");
             continue;
         }
-
-        // Starts the handler for the new browser.
-        browser_handler(browser_socket_fd);
+        
+        // Starts the handler for the new browser without joining with it immediately.
+        pthread_t thread_id; 
+        pthread_create(&thread_id, NULL, browser_handler, &browser_socket_fd);
+        pthread_detach(thread_id); // Detach the thread to avoid memory leaks and allow it to clean up itself.
     }
 
     // Closes the socket.

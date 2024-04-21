@@ -118,7 +118,11 @@ void register_server() {
 void server_listener() {
     char message[BUFFER_LEN];
     receive_message(server_socket_fd, message);
-    puts(message);
+    if(strcmp(message, "ERROR") == 0){
+	    puts("Invalid input!\n");
+    }else{
+	    puts(message);
+    }
 }
 
 /**
