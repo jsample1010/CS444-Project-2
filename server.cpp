@@ -327,7 +327,7 @@ int register_browser(int browser_socket_fd) {
     receive_message(browser_socket_fd, message);
 
     int session_id = strtol(message, NULL, 10);
-    if (session_id == -1 || session.find(session_id) == session_list.end()) {
+    if (session_id == -1 || session_list.find(session_id) == session_list.end()) {
         pthread_mutex_lock(&session_list_mutex);
         while(true) {
             session_id = rand() % 10000;
