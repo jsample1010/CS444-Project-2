@@ -159,6 +159,9 @@ bool process_message(int session_id, const char message[]) {
     char data[BUFFER_LEN];
     strcpy(data, message);
 
+    if(strlen(message) < 2){
+	    return false;
+    }
     // Processes the result variable.
     token = strtok(data, " ");
     result_idx = token[0] - 'a';
