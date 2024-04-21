@@ -324,7 +324,7 @@ int register_browser(int browser_socket_fd) {
     pthread_mutex_unlock(&browser_list_mutex);
 
     char message[BUFFER_LEN];
-    receive_message(browser_socket_fd, msg);
+    receive_message(browser_socket_fd, message);
 
     int session_id = strtol(message, NULL, 10);
     if (session_id == -1 || session.find(session_id) == session_list.end()) {
