@@ -265,17 +265,17 @@ void get_session_file_path(int session_id, char path[]) {
  * Use get_session_file_path() to get the file path for each session.
  */
 void load_all_sessions() {
-    for(int i = 0; i < NUM_SESSIONS; i++){
+    for(auto x : session_list){
 	    char path[SESSION_PATH_LEN];
-	    get_session_file_path(i, path);
+	    get_session_file_path(x.first, path);
 
 	    FILE *file = fopen(path, "r");
 	    if(file == NULL){continue;}
 
-	    if(fread(&session_list[i], sizeof(session_t), 1, file) == 1){
-		    session_list[i].in_use = true;
+	    if(fread(&x.second, sizeof(session_t), 1, file) == 1){
+		    x.second.in_use = true;
 	    } else{
-		    session_list[i].in_use = false;
+		    x.second.in_use = false;
 	    }
 
 	    fclose(file);
@@ -323,11 +323,11 @@ int register_browser(int browser_socket_fd) {
 
     pthread_mutex_unlock(&browser_list_mutex);
 
-    char msg[BUFFER_LEN];
-    receive_message(browser_socket_fd, msg);
+    char message[BUFFER_LEN];
+    receive_message(browser_socket_fd, message);
 
-    int session_id = strtol(msg, NULL, 10);
-    if (session_id == -1) {
+    int session_id = strtol(message, NULL, 10);
+    if (session_id == -1 || session_list.find(session_id) == session_list.end()) {
         pthread_mutex_lock(&session_list_mutex);
         while(true) {
             session_id = rand() % 10000;
@@ -337,15 +337,14 @@ int register_browser(int browser_socket_fd) {
 	        session_list[session_id].in_use = true;
 		break;
 		}
-	    }
-        pthread_mutex_unlock(&session_list_mutex);
 	}
+        pthread_mutex_unlock(&session_list_mutex);
+    }
 
-                browser_list[browser_id].session_id = session_id;
+    browser_list[browser_id].session_id = session_id;
 
-                char message[BUFFER_LEN];
-                sprintf(message, "%d", session_id);
-                send_message(browser_socket_fd, message);
+    sprintf(message, "%d", session_id);
+    send_message(browser_socket_fd, message);
 
     return browser_id;
 }
